@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LoadPath · AI Generative Design Studio</title>
+  <meta name="description" content="Describe a part in plain English. LoadPath sets up the load case with Claude, runs finite-element topology optimization in your browser, and exports a 3D-printable STL.">
+  <meta property="og:title" content="LoadPath · AI Generative Design Studio">
+  <meta property="og:description" content="Browser-native FEA + topology optimization with an AI engineering copilot.">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script>try { const t = localStorage.getItem('loadpath.theme'); if (t) document.documentElement.dataset.theme = t; } catch {}</script>
+</head>
+<body>
+  <div class="bg-grid" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="LoadPath home">
+      <img src="assets/favicon.svg" alt="" width="32" height="32">
+      <span><b>LoadPath</b><small>AI generative design studio</small></span>
+    </a>
+    <nav class="top-actions">
+      <a class="ghost-btn hide-sm" href="tests/" title="Run the solver validation suite">✓ Validation tests</a>
+      <a class="ghost-btn hide-sm" href="https://github.com/kenny-robinson1978/loadpath" target="_blank" rel="noopener">GitHub</a>
+      <button class="icon-btn" id="themeBtn" type="button" aria-label="Toggle light/dark theme" title="Theme">◐</button>
+      <button class="ghost-btn" id="settingsBtn" type="button"><span class="dot" id="keyDot"></span> Claude</button>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Finite-element topology optimization · in your browser</p>
+        <h1>Describe a part.<br><span class="grad">Watch physics design it.</span></h1>
+        <p class="lede">Tell LoadPath what the part must hold. Claude turns your words into supports and loads. Then a SIMP topology optimizer, built on a from-scratch FEA solver, grows the lightest structure that can carry them. Export it as an STL and print it.</p>
+      </div>
+      <form class="brief" id="briefForm" autocomplete="off">
+        <label for="briefInput" class="brief-label">Design brief</label>
+        <textarea id="briefInput" rows="3" placeholder="e.g. A 3D-printed wall bracket, 150 × 150 mm and 12 mm thick, bolted to the wall at the top and bottom of its left edge, that holds a 15 kg shelf along its top edge."></textarea>
+        <div class="brief-row">
+          <div class="chips" id="exampleChips"></div>
+          <button class="primary-btn" id="briefBtn" type="submit"><span class="spark">✦</span> Generate setup</button>
+        </div>
+        <div class="brief-out" id="briefOut" hidden></div>
+      </form>
+    </section>
+
+    <section class="studio">
+      <!-- ============ Setup panel ============ -->
+      <aside class="panel setup" aria-label="Problem setup">
+        <div class="panel-head"><h2>Setup</h2><span class="muted small" id="setupName"></span></div>
+
+        <div class="field">
+          <span class="label">Start from a template</span>
+          <div class="preset-grid" id="presetGrid"></div>
+        </div>
+
+        <div class="grid3">
+          <label class="field"><span class="label">Width <i>mm</i></span><input type="number" id="inW" min="5" step="1"></label>
+          <label class="field"><span class="label">Height <i>mm</i></span><input type="number" id="inH" min="5" step="1"></label>
+          <label class="field"><span class="label">Thick <i>mm</i></span><input type="number" id="inT" min="0.2" step="0.5"></label>
+        </div>
+
+        <label class="field"><span class="label">Material</span><select id="inMat"></select></label>
+        <p class="mat-props mono small" id="matProps"></p>
+
+        <label class="field">
+          <span class="label">Material budget <output id="outVf" class="mono"></output></span>
+          <input type="range" id="inVf" min="0.1" max="0.8" step="0.01">
+          <span class="hint">Fraction of the design space the part may fill.</span>
+        </label>
+
+        <div class="grid2">
+          <label class="field"><span class="label">Resolution</span>
+            <select id="inRes">
+              <option value="60">Draft · fast</option>
+              <option value="90" selected>Standard</option>
+              <option value="130">Fine · slow</option>
+            </select>
+          </label>
+          <label class="field"><span class="label">Min. feature <output id="outRmin" class="mono"></output></span>
+            <input type="range" id="inRmin" min="1.2" max="5" step="0.1" value="2.2">
+          </label>
+        </div>
+
+        <details class="lists" open>
+          <summary>Boundary conditions <span class="muted small" id="bcCount"></span></summary>
+          <div id="bcList" class="bc-list"></div>
+          <p class="hint">Edit on the canvas with the tools above it, or adjust values here.</p>
+        </details>
+
+        <div class="io-row">
+          <button class="ghost-btn" id="importBtn" type="button">Import JSON</button>
+          <button class="ghost-btn" id="exportJsonBtn" type="button">Export JSON</button>
+          <input type="file" id="importFile" accept="application/json,.json" hidden>
+        </div>
+      </aside>
+
+      <!-- ============ Stage ============ -->
+      <section class="panel stage" aria-label="Design canvas">
+        <div class="toolbar">
+          <div class="seg" role="radiogroup" aria-label="Edit tool" id="toolSeg">
+            <button type="button" data-tool="none" class="on" title="View only">◎ View</button>
+            <button type="button" data-tool="support" title="Drag along an edge to add a support">▲ Support</button>
+            <button type="button" data-tool="load" title="Click to place a force">↓ Load</button>
+            <button type="button" data-tool="keepout" title="Drag to reserve empty space">⊘ Keep-out</button>
+            <button type="button" data-tool="keepin" title="Drag to force solid material">■ Keep-in</button>
+            <button type="button" data-tool="erase" title="Click a support, load or region to delete it">⌫ Erase</button>
+          </div>
+          <div class="tool-opts" id="toolOpts"></div>
+        </div>
+
+        <div class="canvas-wrap" id="canvasWrap">
+          <canvas id="cv" aria-label="Design domain"></canvas>
+          <div id="view3d" class="view3d" hidden></div>
+          <div class="legend" id="legend" hidden></div>
+          <div class="toast" id="toast" role="status" hidden></div>
+        </div>
+
+        <div class="stage-foot">
+          <div class="seg" role="radiogroup" aria-label="View" id="viewSeg">
+            <button type="button" data-view="design" class="on">Design</button>
+            <button type="button" data-view="stress" disabled>Stress</button>
+            <button type="button" data-view="deformed" disabled>Deformation</button>
+            <button type="button" data-view="3d" disabled>3D</button>
+          </div>
+          <button class="primary-btn run" id="runBtn" type="button">▶ Optimize</button>
+        </div>
+
+        <div class="progress" id="progress" hidden><div class="bar" id="progressBar"></div></div>
+        <div class="status mono small" id="status">Ready. Pick a template or describe a part, then press Optimize.</div>
+        <div class="chart" id="chart" aria-label="Convergence history"></div>
+      </section>
+
+      <!-- ============ Results ============ -->
+      <aside class="panel results" aria-label="Results">
+        <div class="panel-head"><h2>Verified results</h2><span class="pill" id="verdictPill" hidden></span></div>
+        <div id="resultsEmpty" class="empty">
+          <div class="empty-art" aria-hidden="true">
+            <svg viewBox="0 0 120 70"><path d="M8 10v50M8 14c34 2 64 14 100 30M8 56c30-4 64-8 100-12M8 35c18-2 34-8 46-16M8 35c18 2 32 8 42 15" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" opacity=".55"/></svg>
+          </div>
+          <p>Run the optimizer to see mass, stiffness, stress and a safety-factor check from a <b>verification FEA</b> on the final 0/1 design.</p>
+        </div>
+        <div id="resultsBody" hidden>
+          <div class="metrics" id="metrics"></div>
+          <h3>Engineering notes</h3>
+          <ul class="insights" id="insights"></ul>
+
+          <div class="ai-card">
+            <div class="ai-head">
+              <h3><span class="spark">✦</span> AI design review</h3>
+              <button class="primary-btn sm" id="reviewBtn" type="button">Review with Claude</button>
+            </div>
+            <p class="hint" id="reviewHint">Claude looks at the rendered part and the FEA numbers, then reviews load paths, margins and manufacturability.</p>
+            <div class="md" id="reviewOut" aria-live="polite"></div>
+          </div>
+
+          <h3>Export</h3>
+          <div class="export-grid">
+            <button class="ghost-btn" data-export="stl" type="button">⬇ STL <small>3D print</small></button>
+            <button class="ghost-btn" data-export="svg" type="button">⬇ SVG <small>laser / CNC</small></button>
+            <button class="ghost-btn" data-export="png" type="button">⬇ PNG <small>image</small></button>
+            <button class="ghost-btn" data-export="md" type="button">⬇ Report <small>Markdown</small></button>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <section class="how">
+      <h2>How it works</h2>
+      <ol class="steps">
+        <li><b>Brief → boundary conditions.</b> Claude (Opus 5.5) reads the brief and returns a JSON-schema-validated load case: domain, supports, forces, keep-out and keep-in regions, and every assumption it made. With no key, a transparent rule-based parser does the job instead.</li>
+        <li><b>Finite elements.</b> The domain is meshed into thousands of bilinear Q4 plane-stress elements. A banded Cholesky factorization then solves <span class="mono">K u = F</span>, and that factor preconditions conjugate gradients on later iterations.</li>
+        <li><b>Topology optimization.</b> SIMP penalization, a density filter and Heaviside projection with β-continuation. Optimality-criteria updates minimize compliance under your material budget, with an adjoint sensitivity checked against finite differences in the test suite.</li>
+        <li><b>Verify &amp; export.</b> The 0/1 design is re-analyzed in physical units to get mass, stiffness, von Mises stress and the safety factor against yield. Marching squares then traces smooth outlines for STL, SVG and the 3D view.</li>
+      </ol>
+      <p class="muted small">Linear-elastic, small-deflection, plane-stress model for preliminary design. Check final parts with full 3D FEA and testing. Material values are typical handbook figures.</p>
+    </section>
+  </main>
+
+  <footer class="foot muted small">
+    Built by <a href="https://github.com/kenny-robinson1978" target="_blank" rel="noopener">@kenny-robinson1978</a> · Mechanical Engineering ·<a href="https://github.com/kenny-robinson1978/loadpath" target="_blank" rel="noopener">source</a> · <a href="tests/">validation tests</a> · <a href="tests/bench.html">benchmarks</a>
+  </footer>
+
+  <dialog id="settingsDlg" class="dlg">
+    <form method="dialog">
+      <h2>Connect Claude</h2>
+      <p class="muted">LoadPath works fully offline. Add your own Anthropic API key to unlock natural-language setup and AI design reviews (model <span class="mono">claude-opus-5-5</span>). Your key goes straight from this browser to <span class="mono">api.anthropic.com</span>. There is no LoadPath server.</p>
+      <label class="field"><span class="label">Anthropic API key</span><input type="password" id="keyInput" placeholder="sk-ant-…" autocomplete="off" spellcheck="false"></label>
+      <label class="check"><input type="checkbox" id="keyRemember"> Remember on this device</label>
+      <p class="hint">Get a key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>.</p>
+      <div class="dlg-actions">
+        <button class="ghost-btn" value="clear" id="keyClear">Remove key</button>
+        <button class="primary-btn" value="save" id="keySave">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="js/ui/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LoadPath Tests</title>
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <style>
+    :root { --bg: #0a0f17; --text: #e6edf6; --muted: #8a9bb3; --ok: #34d399; --bad: #f87171; color-scheme: dark; }
+    @media (prefers-color-scheme: light) { :root { --bg: #f5f7fa; --text: #0f1724; --muted: #51607a; --ok: #059669; --bad: #dc2626; color-scheme: light; } }
+    body { margin: 0 auto; max-width: 860px; padding: 32px 16px; background: var(--bg); color: var(--text); font: 15px/1.6 system-ui, sans-serif; }
+    h1 { margin: 0 0 4px; } a { color: inherit; }
+    ul { list-style: none; padding: 0; } li { padding: 6px 0; border-bottom: 1px solid color-mix(in srgb, var(--muted) 25%, transparent); }
+    .ok { color: var(--ok); } .bad { color: var(--bad); }
+    pre { white-space: pre-wrap; color: var(--muted); margin: 4px 0 0 20px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <h1>LoadPath solver tests</h1>
+  <p id="summary" class="muted">Running… (the optimizer tests take a few seconds)</p>
+  <ul id="results"></ul>
+  <p><a href="../">← Back to app</a></p>
+  <script type="module" src="fea.test.js"></script>
+</body>
+</html>

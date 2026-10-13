@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LoadPath Benchmarks</title>
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <style>
+    :root { --bg: #0a0f17; --text: #e6edf6; --muted: #8a9bb3; --line: #223047; color-scheme: dark; }
+    @media (prefers-color-scheme: light) { :root { --bg: #f5f7fa; --text: #0f1724; --muted: #51607a; --line: #d5dce6; color-scheme: light; } }
+    body { margin: 0 auto; max-width: 1100px; padding: 32px 16px; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, sans-serif; }
+    .wrap { overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+    th, td { padding: 6px 10px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+    th:first-child, td:first-child { text-align: left; }
+    th { color: var(--muted); font-weight: 600; }
+    a { color: inherit; }
+  </style>
+</head>
+<body>
+  <h1>LoadPath solver benchmarks</h1>
+  <p id="status">Each preset runs to convergence in a Web Worker, one after another.</p>
+  <div class="wrap"><table>
+    <thead><tr><th>Preset</th><th>Elements</th><th>DOFs</th><th>Iterations</th><th>Time (s)</th><th>ms / iter</th><th>Factorizations</th><th>CG iters</th><th>Grayness</th><th>Mass saved</th><th>Stiffness kept</th><th>Specific stiffness ×</th><th>SF</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table></div>
+  <p><a href="../">← Back to app</a></p>
+  <script type="module">
+    const cases = new URLSearchParams(location.search).get('cases')?.split(',').map((c) => c.split(':'))
+      ?? ['cantilever', 'mbb', 'bridge', 'lbracket', 'shelf', 'mount'].map((id) => [id, 3600]);
+    const rows = document.getElementById('rows');
+    const results = [];
+    for (const [id, target] of cases) {
+      document.getElementById('status').textContent = `Running ${id} (~${target} elements)…`;
+      const r = await new Promise((resolve) => {
+        const w = new Worker('bench.worker.js', { type: 'module' });
+        w.onmessage = (e) => { w.terminate(); resolve(e.data); };
+        w.onerror = (e) => { w.terminate(); resolve({ id, error: e.message }); };
+        w.postMessage({ id, target: +target });
+      });
+      results.push(r);
+      const f = (v, d = 2) => (Number.isFinite(v) ? v.toFixed(d) : '—');
+      rows.insertAdjacentHTML('beforeend', r.error ? `<tr><td>${id}</td><td colspan="12">${r.error}</td></tr>` :
+        `<tr><td>${r.id}</td><td>${r.nel}</td><td>${r.dofs}</td><td>${r.iters}</td><td>${f(r.seconds, 1)}</td><td>${f(r.msPerIter, 0)}</td><td>${r.factorizations}</td><td>${r.cgIterations}</td><td>${f(r.grayness, 3)}</td><td>${f(r.massSaved * 100, 0)}%</td><td>${f(r.stiffnessRetained * 100, 0)}%</td><td>${f(r.specificStiffnessGain)}</td><td>${f(r.safetyFactor)}</td></tr>`);
+    }
+    document.getElementById('status').textContent = 'Done.';
+    window.__BENCH__ = results;
+  </script>
+</body>
+</html>
